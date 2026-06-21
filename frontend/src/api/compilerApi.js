@@ -12,3 +12,5 @@ export const executeCode = async ({ code, language }) => {
 
   return response.data;
 };
+
+export default API;

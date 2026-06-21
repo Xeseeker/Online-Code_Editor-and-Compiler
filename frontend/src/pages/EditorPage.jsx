@@ -1,9 +1,17 @@
-import { useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import CodeEditor from "../components/Editor";
-import LanguageSelector, { languages } from "../components/LanguageSelector";
+import FileExplorer from "../components/fileExplorer/FileExplorer";
+import LanguageSelector from "../components/LanguageSelector";
+import { languages } from "../constants/languages";
 import Output from "../components/Output";
+import PreviewPanel from "../components/preview/PreviewPanel";
 import RunButton from "../components/RunButton";
+import EditorTabs from "../components/tabs/EditorTabs";
+import TerminalPanel from "../components/terminal/TerminalPanel";
 import { executeCode } from "../api/compilerApi";
+import { useEditorStore } from "../store/editorStore";
+import { useFileStore } from "../store/fileStore";
+import { useProjectStore } from "../store/projectStore";
 
 const starterCode = {
   javascript: "console.log('Hello JavaScript');",
@@ -19,22 +27,78 @@ console.log(message);`,
 
 const EditorPage = () => {
   const [language, setLanguageState] = useState("javascript");
-  const [code, setCode] = useState(starterCode.javascript);
-  const [output, setOutput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
+  const [scratchCode, setScratchCode] = useState(starterCode.javascript);
+  const { output, isRunning, setOutput, setIsRunning } = useEditorStore();
+  const {
+    projects,
+    activeProject,
+    createProject,
+    deleteProject,
+    loadProjects,
+    renameProject,
+    setActiveProject,
+  } = useProjectStore();
+  const {
+    activeFilePath,
+    closeTab,
+    createFile,
+    createFolder,
+    deleteEntry,
+    dirtyFiles,
+    filesByPath,
+    loadTree,
+    openFile,
+    openTabs,
+    saveActiveFile,
+    setActiveFile,
+    tree,
+    updateActiveContent,
+  } = useFileStore();
+
+  const activeFile = activeFilePath ? filesByPath[activeFilePath] : null;
+  const editorLanguage = activeFile?.language || language;
+  const editorCode = activeFile?.content ?? scratchCode;
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    if (activeProject?.id) {
+      loadTree(activeProject.id);
+    }
+  }, [activeProject?.id, loadTree]);
+
+  useEffect(() => {
+    if (!activeProject?.id || !activeFilePath || !dirtyFiles[activeFilePath]) return undefined;
+    const timeoutId = window.setTimeout(() => saveActiveFile(activeProject.id), 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeProject?.id, activeFilePath, dirtyFiles, filesByPath, saveActiveFile]);
+
+  const activeLanguage = useMemo(
+    () => languages.find((item) => item.value === editorLanguage) || languages[0],
+    [editorLanguage],
+  );
 
   const setLanguage = (nextLanguage) => {
     setLanguageState(nextLanguage);
-    setCode(starterCode[nextLanguage]);
+    setScratchCode(starterCode[nextLanguage]);
     setOutput("");
+  };
+
+  const setCode = (value) => {
+    if (activeFilePath) {
+      updateActiveContent(value);
+    } else {
+      setScratchCode(value);
+    }
   };
 
   const runCode = async () => {
     try {
       setIsRunning(true);
       setOutput("");
-      const result = await executeCode({ code, language });
-
+      const result = await executeCode({ code: editorCode, language: editorLanguage });
       setOutput(result.output || "Code ran successfully.");
     } catch (error) {
       setOutput(error.response?.data?.error || "Error running code");
@@ -43,86 +107,115 @@ const EditorPage = () => {
     }
   };
 
-  const activeLanguage = languages.find((item) => item.value === language);
+  const handleCreateProject = async () => {
+    const name = window.prompt("Project name", "Fullstack app");
+    if (!name) return;
+    const project = await createProject(name);
+    await loadTree(project.id);
+  };
+
+  const handleRenameProject = async () => {
+    if (!activeProject) return;
+    const name = window.prompt("Project name", activeProject.name);
+    if (name) await renameProject(activeProject.id, name);
+  };
+
+  const handleDeleteProject = async () => {
+    if (!activeProject || !window.confirm(`Delete ${activeProject.name}?`)) return;
+    await deleteProject(activeProject.id);
+  };
+
+  const handleCreateFile = async () => {
+    if (!activeProject) return;
+    const path = window.prompt("File path", "frontend/src/App.jsx");
+    if (path) await createFile(activeProject.id, path);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!activeProject) return;
+    const path = window.prompt("Folder path", "frontend/src/components");
+    if (path) await createFolder(activeProject.id, path);
+  };
+
+  const handleDeleteEntry = async (path) => {
+    if (!activeProject || !window.confirm(`Delete ${path}?`)) return;
+    await deleteEntry(activeProject.id, path);
+  };
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100 text-slate-900">
+    <div className="flex h-screen min-h-screen flex-col bg-slate-100 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
         <div className="flex h-14 items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 font-mono text-sm font-bold text-white">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-600 font-mono text-sm font-bold text-white">
               CE
             </div>
-            <div>
-              <h1 className="text-base font-semibold leading-5">Code Editor</h1>
-              <p className="text-xs text-slate-500">{activeLanguage.runtime}</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold leading-5">{activeProject?.name || "Code Editor"}</h1>
+              <p className="truncate text-xs text-slate-500">
+                {activeProject ? `Modified ${new Date(activeProject.lastModifiedAt).toLocaleString()}` : activeLanguage.runtime}
+              </p>
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 text-sm text-slate-600 md:flex">
-            {languages.map((item) => (
-              <span key={item.value} className="rounded-md bg-slate-100 px-2 py-1">
-                {item.label}
-              </span>
-            ))}
+          <div className="flex items-center gap-2">
+            <select
+              className="h-9 rounded border border-slate-300 bg-white px-2 text-sm"
+              value={activeProject?.id || ""}
+              onChange={(event) => setActiveProject(projects.find((project) => project.id === event.target.value) || null)}
+              title="Open project"
+            >
+              <option value="">Scratch file</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+            <button type="button" className="h-9 rounded border border-slate-300 px-3 text-sm hover:bg-slate-50" onClick={handleCreateProject}>New</button>
+            <button type="button" className="h-9 rounded border border-slate-300 px-3 text-sm hover:bg-slate-50" onClick={handleRenameProject} disabled={!activeProject}>Rename</button>
+            <button type="button" className="h-9 rounded border border-slate-300 px-3 text-sm hover:bg-slate-50" onClick={handleDeleteProject} disabled={!activeProject}>Delete</button>
           </div>
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)_380px]">
-        <aside className="rounded-md border border-slate-200 bg-white p-4">
-          <div className="mb-4">
-            <p className="text-xs font-semibold uppercase text-slate-500">Language</p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-950">
-              {activeLanguage.label}
-            </h2>
-          </div>
+      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+        <FileExplorer
+          tree={tree}
+          onOpenFile={(path) => activeProject && openFile(activeProject.id, path)}
+          onCreateFile={handleCreateFile}
+          onCreateFolder={handleCreateFolder}
+          onDelete={handleDeleteEntry}
+        />
 
-          <LanguageSelector language={language} setLanguage={setLanguage} />
-
-          <div className="mt-5 divide-y divide-slate-200 rounded-md border border-slate-200 text-sm">
-            <div className="p-3">
-              <p className="text-xs font-medium text-slate-500">File</p>
-              <p className="mt-1 font-mono text-slate-800">{activeLanguage.extension}</p>
-            </div>
-            <div className="p-3">
-              <p className="text-xs font-medium text-slate-500">Runtime</p>
-              <p className="mt-1 font-mono text-slate-800">{activeLanguage.runtime}</p>
-            </div>
-          </div>
-        </aside>
-
-        <section className="flex min-h-[520px] flex-col overflow-hidden">
-          <div className="flex h-12 items-center justify-between rounded-t-md border border-slate-800 bg-[#252526] px-3">
-            <div className="flex h-full items-end">
-              <div className="flex h-10 items-center rounded-t-md bg-[#1e1e1e] px-4 font-mono text-sm text-slate-100">
-                {activeLanguage.extension}
-              </div>
+        <section className="flex min-h-0 flex-col overflow-hidden">
+          <EditorTabs
+            tabs={openTabs}
+            activeFilePath={activeFilePath}
+            dirtyFiles={dirtyFiles}
+            onSelect={setActiveFile}
+            onClose={closeTab}
+          />
+          <div className="flex h-12 items-center justify-between border-b border-slate-800 bg-[#1e1e1e] px-3">
+            <div className="min-w-0">
+              <p className="truncate font-mono text-sm text-slate-100">{activeFilePath || activeLanguage.extension}</p>
+              <p className="text-xs text-slate-400">{dirtyFiles[activeFilePath] ? "Autosaving" : "Saved"}</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="hidden text-xs text-slate-400 sm:inline">
-                {activeLanguage.runtime}
-              </span>
+              {!activeFilePath ? <LanguageSelector language={language} setLanguage={setLanguage} /> : null}
               <RunButton runCode={runCode} isRunning={isRunning} />
             </div>
           </div>
-
-          <CodeEditor code={code} setCode={setCode} language={language} />
+          <CodeEditor code={editorCode} setCode={setCode} language={editorLanguage} />
+          {activeProject ? <TerminalPanel projectId={activeProject.id} /> : null}
         </section>
 
-        <Output output={output} isRunning={isRunning} />
-      </main>
-
-      <footer className="border-t border-slate-200 bg-white px-4 py-2 text-xs text-slate-500">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span>{activeLanguage.label}</span>
-          <span>{isRunning ? "Running" : "Ready"}</span>
+        <div className="grid min-h-0 grid-rows-2">
+          <Output output={output} isRunning={isRunning} />
+          <PreviewPanel port={5174} />
         </div>
-      </footer>
+      </main>
     </div>
   );
 };
 
 export default EditorPage;
-
 
