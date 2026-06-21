@@ -7,7 +7,14 @@ import { executeCode } from "../api/compilerApi";
 
 const starterCode = {
   javascript: "console.log('Hello JavaScript');",
+  java: `public class Main {
+  public static void main(String[] args) {
+    System.out.println("Hello Java");
+  }
+}`,
   python: "print('Hello Python')",
+  typescript: `const message: string = "Hello TypeScript";
+console.log(message);`,
 };
 
 const EditorPage = () => {
@@ -53,8 +60,11 @@ const EditorPage = () => {
           </div>
 
           <div className="hidden items-center gap-2 text-sm text-slate-600 md:flex">
-            <span className="rounded-md bg-slate-100 px-2 py-1">JavaScript</span>
-            <span className="rounded-md bg-slate-100 px-2 py-1">Python</span>
+            {languages.map((item) => (
+              <span key={item.value} className="rounded-md bg-slate-100 px-2 py-1">
+                {item.label}
+              </span>
+            ))}
           </div>
         </div>
       </header>
@@ -114,3 +124,5 @@ const EditorPage = () => {
 };
 
 export default EditorPage;
+
+
