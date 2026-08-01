@@ -1,8 +1,15 @@
-import { spawn } from "node:child_process";
+﻿import { spawn } from "node:child_process";
 
 const processes = new Map();
 
-export const startProcess = ({ id, command, args = [], cwd, env = {} }) => {
+const appendLog = (record, chunk) => {
+  record.logs += chunk.toString();
+  if (record.logs.length > 20000) {
+    record.logs = record.logs.slice(-20000);
+  }
+};
+
+export const startProcess = ({ id, projectId, name, command, args = [], cwd, env = {}, port }) => {
   if (processes.has(id)) {
     return processes.get(id);
   }
@@ -15,13 +22,26 @@ export const startProcess = ({ id, command, args = [], cwd, env = {} }) => {
 
   const record = {
     id,
+    projectId,
+    name,
+    command,
+    args,
+    cwd,
     pid: child.pid,
     status: "running",
-    port: env.PORT ? Number(env.PORT) : undefined,
+    port: port || (env.PORT ? Number(env.PORT) : undefined),
     startedAt: new Date().toISOString(),
+    exitCode: null,
+    logs: "",
     child,
   };
 
+  child.stdout?.on("data", (chunk) => appendLog(record, chunk));
+  child.stderr?.on("data", (chunk) => appendLog(record, chunk));
+  child.on("error", (error) => {
+    record.status = "errored";
+    appendLog(record, `${error.message}\n`);
+  });
   child.on("exit", (code) => {
     record.status = "exited";
     record.exitCode = code;
@@ -39,5 +59,14 @@ export const stopProcess = (id) => {
   return true;
 };
 
-export const listProcesses = () =>
-  Array.from(processes.values()).map(({ child, ...record }) => record);
+export const getProcess = (id) => {
+  const record = processes.get(id);
+  if (!record) return null;
+  const { child, ...snapshot } = record;
+  return snapshot;
+};
+
+export const listProcesses = (projectId) =>
+  Array.from(processes.values())
+    .filter((record) => !projectId || record.projectId === projectId)
+    .map(({ child, ...record }) => record);
