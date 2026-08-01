@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CodeEditor from "../components/Editor";
 import FileExplorer from "../components/fileExplorer/FileExplorer";
 import LanguageSelector from "../components/LanguageSelector";
@@ -35,8 +35,14 @@ const EditorPage = () => {
     createProject,
     deleteProject,
     loadProjects,
+    loadRuntime,
+    ports,
+    processes,
     renameProject,
+    runNpmInstall,
+    runNpmScript,
     setActiveProject,
+    stopProcess,
   } = useProjectStore();
   const {
     activeFilePath,
@@ -66,8 +72,9 @@ const EditorPage = () => {
   useEffect(() => {
     if (activeProject?.id) {
       loadTree(activeProject.id);
+      loadRuntime(activeProject.id);
     }
-  }, [activeProject?.id, loadTree]);
+  }, [activeProject?.id, loadRuntime, loadTree]);
 
   useEffect(() => {
     if (!activeProject?.id || !activeFilePath || !dirtyFiles[activeFilePath]) return undefined;
@@ -141,6 +148,30 @@ const EditorPage = () => {
     if (!activeProject || !window.confirm(`Delete ${path}?`)) return;
     await deleteEntry(activeProject.id, path);
   };
+  const handleRunDev = async (target) => {
+    if (!activeProject) return;
+    await runNpmScript(activeProject.id, target, "dev");
+    await loadRuntime(activeProject.id);
+  };
+
+  const handleRunBuild = async (target) => {
+    if (!activeProject) return;
+    await runNpmScript(activeProject.id, target, "build");
+    await loadRuntime(activeProject.id);
+  };
+
+  const handleInstallPackage = async (target, packageName) => {
+    if (!activeProject) return;
+    await runNpmInstall(activeProject.id, target, packageName);
+    await loadRuntime(activeProject.id);
+  };
+
+  const handleStopProcess = async (processId) => {
+    if (!activeProject) return;
+    await stopProcess(activeProject.id, processId);
+    await loadRuntime(activeProject.id);
+  };
+
 
   return (
     <div className="flex h-screen min-h-screen flex-col bg-slate-100 text-slate-900">
@@ -210,7 +241,15 @@ const EditorPage = () => {
 
         <div className="grid min-h-0 grid-rows-2">
           <Output output={output} isRunning={isRunning} />
-          <PreviewPanel port={5174} />
+          <PreviewPanel
+            ports={ports}
+            processes={processes}
+            onInstall={handleInstallPackage}
+            onRefresh={() => activeProject && loadRuntime(activeProject.id)}
+            onRunBuild={handleRunBuild}
+            onRunDev={handleRunDev}
+            onStop={handleStopProcess}
+          />
         </div>
       </main>
     </div>
